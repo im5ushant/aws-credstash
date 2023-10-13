@@ -4,6 +4,7 @@ pull_request_rules:
       - check-success=node-10
       - check-success=node-12
       - check-success=node-14
+      - check-success=node-18
     actions:
       merge:
         method: merge

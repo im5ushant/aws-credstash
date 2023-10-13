@@ -24,7 +24,11 @@
     "prettier": "^2.2.1"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.428.0",
+    "@aws-sdk/client-kms": "^3.428.0",
+    "@aws-sdk/lib-dynamodb": "^3.428.0",
     "aes-js": "^3.1.2",
+    "aws-sdk-js-codemod": "^0.18.3",
     "debug": "^4.3.1"
   },
   "peerDependencies": {
