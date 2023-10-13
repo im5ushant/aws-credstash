@@ -1,6 +1,6 @@
 {
   "name": "aws-credstash",
-  "version": "3.0.1",
+  "version": "3.0.1-rc1",
   "description": "Node.js credstash using AWS DynamoDB and KMS. Fork of nodecredstash",
   "main": "index.js",
   "engines": {
