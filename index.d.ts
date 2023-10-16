@@ -7,7 +7,6 @@
 
 /// <reference types="node"/>
 
-
 import * as AWS_DynamoDBDocumentClient from "@aws-sdk/lib-dynamodb";
 import * as AWS_DynamoDB from "@aws-sdk/client-dynamodb";
 import * as AWS_KMS from "@aws-sdk/client-kms";

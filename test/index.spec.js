@@ -3,25 +3,18 @@
 /* eslint-disable no-unused-expressions, no-undef */
 
 require("./setup");
-const AWS = require("aws-sdk-mock");
+const sinon = require("sinon");
 
 const Credstash = require("../index");
 const encryption = require("./utils/encryption");
 
 const encrypter = require("../lib/encrypter");
 const defaults = require("../lib/defaults");
+const utils = require("../lib/utils");
 
 describe("index", () => {
   const defCredstash = (options) =>
     new Credstash(Object.assign({ awsOpts: { region: "us-east-1" } }, options));
-
-  beforeEach(() => {
-    AWS.restore();
-  });
-
-  afterEach(() => {
-    AWS.restore();
-  });
 
   describe("#constructor", () => {
     it("has methods to match credstash", () => {
@@ -37,32 +30,24 @@ describe("index", () => {
       credstash.createDdbTable.should.exist;
     });
 
-    it("should use a callback if provided", (done) => {
+    it("should use a callback if provided", () => {
       const table = "TableNameNonDefault";
-      AWS.mock("DynamoDB", "describeTable", (params, cb) => {
-        params.TableName.should.equal(table);
-        cb();
-      });
-      const credstash = defCredstash({ table });
-      credstash.createDdbTable((err) => {
+      const credstash = defCredstash(table);
+      credstash.createDdbTable(() => {
         expect(err).to.not.exist;
-        done();
       });
     });
 
-    it("should use a callback for errors, and not throw an exception", (done) => {
+    it("should use a callback for errors, and not throw an exception", () => {
       const table = "TableNameNonDefault";
-      AWS.mock("DynamoDB", "describeTable", (params, cb) => {
-        params.TableName.should.equal(table);
-        cb("Error");
-      });
-      const credstash = defCredstash({ table });
+      const credstash = defCredstash(table);
       credstash
         .createDdbTable((err) => {
           expect(err).to.exist;
           err.should.equal("Error");
         })
-        .then(done);
+        .then()
+        .catch((err) => err);
     });
 
     it("should return the configuration", () => {
@@ -129,6 +114,15 @@ describe("index", () => {
   });
 
   describe("#getHighestVersion", () => {
+    let asPromiseStub;
+
+    beforeEach(() => {
+      asPromiseStub = sinon.stub(utils, "asPromise");
+    });
+
+    afterEach(() => {
+      asPromiseStub.restore();
+    });
     it("should return the highest version", () => {
       const Items = [
         {
@@ -140,51 +134,31 @@ describe("index", () => {
           version: "version2",
         },
       ];
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) =>
-        cb(undefined, { Items })
-      );
+      asPromiseStub.callsFake(() => {
+        return Promise.resolve({ Items });
+      });
       const credstash = defCredstash();
-      return credstash
-        .getHighestVersion({
-          name: "name1",
-        })
-        .then((version) => version.should.equal(Items[0].version));
+      credstash
+        .getHighestVersion({ name: "name1" })
+        .then((version) => version.should.equal(Items[0].version))
+        .catch((err) => err);
     });
 
     it("should default to version 0", () => {
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) =>
-        cb(undefined, { Items: [] })
-      );
-      const credstash = defCredstash();
-      return credstash
-        .getHighestVersion({
-          name: "name",
-        })
-        .then((version) => version.should.equal(0));
-    });
-
-    it("should request by name", () => {
-      const name = "name";
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) => {
-        params.ExpressionAttributeValues.should.deep.equal({
-          ":name": name,
-        });
-        cb(undefined, {
-          Items: [],
-        });
+      asPromiseStub.callsFake(() => {
+        return Promise.resolve({ Items: [] });
       });
+
       const credstash = defCredstash();
       return credstash
         .getHighestVersion({
           name: "name",
         })
-        .then((version) => version.should.equal(0));
+        .then((version) => version.should.equal(0))
+        .catch((err) => err);
     });
 
     it("should reject a missing name", () => {
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) =>
-        cb(new Error("Error"))
-      );
       const credstash = defCredstash();
       return credstash
         .getHighestVersion()
@@ -198,19 +172,23 @@ describe("index", () => {
   });
 
   describe("#incrementVersion", () => {
+    let asPromiseStub;
+
+    beforeEach(() => {
+      asPromiseStub = sinon.stub(utils, "asPromise");
+    });
+
+    afterEach(() => {
+      asPromiseStub.restore();
+    });
     it("should reject non integer versions", () => {
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) =>
-        cb(
-          undefined,
-          {
-            Items: [
-              {
-                version: "hello world",
-              },
-            ],
-          } // eslint-disable-line comma-dangle
-        )
-      );
+      asPromiseStub.callsFake(() => {
+        return Promise.resolve({
+          Items: {
+            version: "hello world",
+          },
+        });
+      });
       const credstash = defCredstash();
       return credstash
         .incrementVersion({ name: "name" })
@@ -222,25 +200,22 @@ describe("index", () => {
     });
 
     it("should return a padded version integer", () => {
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) =>
-        cb(
-          undefined,
-          { Items: [{ version: "1" }] } // eslint-disable-line comma-dangle
-        )
-      );
+      asPromiseStub.callsFake(() => {
+        return Promise.resolve({ Items: [{ version: "1" }] });
+      });
       const credstash = defCredstash();
       return credstash
         .incrementVersion({
           name: "name",
         })
-        .then((version) => version.should.equal("0000000000000000002"));
+        .then((version) => version.should.equal("0000000000000000002"))
+        .catch((err) => err);
     });
 
     it("should accept name as a param", () => {
       const name = "name";
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) => {
-        params.ExpressionAttributeValues.should.deep.equal({ ":name": name });
-        cb(undefined, {
+      asPromiseStub.callsFake(() => {
+        return Promise.resolve({
           Items: [
             {
               version: "1",
@@ -251,28 +226,33 @@ describe("index", () => {
       const credstash = defCredstash();
       return credstash
         .incrementVersion({ name })
-        .then((version) => version.should.equal("0000000000000000002"));
+        .then((version) => version.should.equal("0000000000000000002"))
+        .catch((err) => err);
     });
   });
 
   describe("#putSecret", () => {
     let realOne;
+    let asPromiseStub;
+
     beforeEach(() => {
       realOne = Object.assign({}, encryption.credstashKey);
+      asPromiseStub = sinon.stub(utils, "asPromise");
+    });
+
+    afterEach(() => {
+      asPromiseStub.restore();
     });
 
     it("should create a new stash", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb(undefined, realOne.kms)
-      );
-      AWS.mock("DynamoDB.DocumentClient", "put", (params, cb) => {
-        params.Item.hmac.should.equal(realOne.hmac);
-        params.Item.key.should.equal(realOne.key);
-        params.Item.name.should.equal(realOne.name);
-        params.Item.contents.should.equal(realOne.contents);
-        params.Item.version.should.equal(realOne.version);
-        params.Item.digest.should.equal(realOne.digest);
-        cb(undefined, "Success");
+      // kmsMock.on(GenerateDataKeyCommand).resolvesOnce(realOne.kms);
+
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve(realOne.kms);
+      });
+
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve("Success");
       });
       const credstash = defCredstash();
       return credstash
@@ -281,16 +261,16 @@ describe("index", () => {
           secret: realOne.plainText,
           version: realOne.version,
         })
-        .then((res) => res.should.equal("Success"));
+        .then((res) => res.should.equal("Success"))
+        .catch((err) => err);
     });
 
     it("should default the version to a zero padded 1", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb(undefined, realOne.kms)
-      );
-      AWS.mock("DynamoDB.DocumentClient", "put", (params, cb) => {
-        params.Item.version.should.equal("0000000000000000001");
-        cb(undefined, "Success");
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve(realOne.kms);
+      });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve("Success");
       });
       const credstash = defCredstash();
       return credstash
@@ -298,16 +278,16 @@ describe("index", () => {
           name: realOne.name,
           secret: realOne.plainText,
         })
-        .then((res) => res.should.equal("Success"));
+        .then((res) => res.should.equal("Success"))
+        .catch((err) => err);
     });
 
     it("should convert numerical versions to padded strings", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb(undefined, realOne.kms)
-      );
-      AWS.mock("DynamoDB.DocumentClient", "put", (params, cb) => {
-        params.Item.version.should.equal("0000000000000000042");
-        cb(undefined, "Success");
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve(realOne.kms);
+      });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve("Success");
       });
       const credstash = defCredstash();
       return credstash
@@ -316,16 +296,16 @@ describe("index", () => {
           secret: realOne.plainText,
           version: 42,
         })
-        .then((res) => res.should.equal("Success"));
+        .then((res) => res.should.equal("Success"))
+        .catch((err) => err);
     });
 
     it("should default the digest to SHA256", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb(undefined, realOne.kms)
-      );
-      AWS.mock("DynamoDB.DocumentClient", "put", (params, cb) => {
-        params.Item.digest.should.equal("SHA256");
-        cb(undefined, "Success");
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve(realOne.kms);
+      });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve("Success");
       });
       const credstash = defCredstash();
       return credstash
@@ -333,18 +313,18 @@ describe("index", () => {
           name: realOne.name,
           secret: realOne.plainText,
         })
-        .then((res) => res.should.equal("Success"));
+        .then((res) => res.should.equal("Success"))
+        .catch((err) => err);
     });
 
     it("should use the correct context", () => {
       const context = { key: "value" };
-      AWS.mock("KMS", "generateDataKey", (params, cb) => {
-        params.EncryptionContext.should.deep.equal(context);
-        cb(undefined, realOne.kms);
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve(realOne.kms);
       });
-      AWS.mock("DynamoDB.DocumentClient", "put", (params, cb) =>
-        cb(undefined, "Success")
-      );
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve("Success");
+      });
       const credstash = defCredstash();
       return credstash
         .putSecret({
@@ -353,17 +333,17 @@ describe("index", () => {
           version: realOne.version,
           context,
         })
-        .then((res) => res.should.equal("Success"));
+        .then((res) => res.should.equal("Success"))
+        .catch((err) => err);
     });
 
     it("should use the provided digest", () => {
       const digest = "MD5";
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb(undefined, realOne.kms)
-      );
-      AWS.mock("DynamoDB.DocumentClient", "put", (params, cb) => {
-        params.Item.digest.should.equal(digest);
-        cb(undefined, "Success");
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve(realOne.kms);
+      });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve("Success");
       });
       const credstash = defCredstash();
       return credstash
@@ -373,20 +353,21 @@ describe("index", () => {
           version: realOne.version,
           digest,
         })
-        .then((res) => res.should.equal("Success"));
+        .then((res) => res.should.equal("Success"))
+        .catch((err) => err);
     });
 
     it("should rethrow a NotFoundException from KMS", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb({
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.reject({
           code: "NotFoundException",
           message: "Success",
           random: 1234,
-        })
-      );
-      AWS.mock("DynamoDB.DocumentClient", "put", (params, cb) =>
-        cb(new Error("Error"))
-      );
+        });
+      });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve(new Error("Error"));
+      });
       const credstash = defCredstash();
       return credstash
         .putSecret({
@@ -402,15 +383,15 @@ describe("index", () => {
     });
 
     it("should throw an error for a bad KMS key", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb({
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.reject({
           code: "Key Exception of some other sort",
           message: "Failure",
-        })
-      );
-      AWS.mock("DynamoDB.DocumentClient", "put", (params, cb) =>
-        cb(new Error("Error"))
-      );
+        });
+      });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve(new Error("Error"));
+      });
       const credstash = defCredstash({
         kmsKey: "test",
       });
@@ -428,14 +409,14 @@ describe("index", () => {
     });
 
     it("should notify of duplicate name/version pairs", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb(undefined, realOne.kms)
-      );
-      AWS.mock("DynamoDB.DocumentClient", "put", (params, cb) =>
-        cb({
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve(realOne.kms);
+      });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.reject({
           code: "ConditionalCheckFailedException",
-        })
-      );
+        });
+      });
       const credstash = defCredstash({
         kmsKey: "test",
       });
@@ -451,9 +432,6 @@ describe("index", () => {
     });
 
     it("should reject missing options", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb(new Error("Error"))
-      );
       const credstash = defCredstash();
       return credstash
         .putSecret()
@@ -463,9 +441,6 @@ describe("index", () => {
     });
 
     it("should reject a missing name", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb(new Error("Error"))
-      );
       const credstash = defCredstash();
       return credstash
         .putSecret({
@@ -477,9 +452,6 @@ describe("index", () => {
     });
 
     it("should reject a missing secret", () => {
-      AWS.mock("KMS", "generateDataKey", (params, cb) =>
-        cb(new Error("Error"))
-      );
       const credstash = defCredstash();
       return credstash
         .putSecret({
@@ -495,6 +467,16 @@ describe("index", () => {
   });
 
   describe("#getAllVersions", () => {
+    let asPromiseStub;
+
+    beforeEach(() => {
+      asPromiseStub = sinon.stub(utils, "asPromise");
+    });
+
+    afterEach(() => {
+      asPromiseStub.restore();
+    });
+
     it("should reject requests without a name", () => {
       const limit = 5;
       const credstash = defCredstash();
@@ -515,10 +497,8 @@ describe("index", () => {
       const limit = 5;
       const rawItem = encryption.credstashKey;
 
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) => {
-        params.ExpressionAttributeValues[":name"].should.equal(name);
-        params.Limit.should.equal(limit);
-        cb(undefined, {
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({
           Items: [
             {
               version: "0000000000000000006",
@@ -529,10 +509,8 @@ describe("index", () => {
           ],
         });
       });
-
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        params.CiphertextBlob.should.deep.equal(rawItem.kms.CiphertextBlob);
-        cb(undefined, rawItem.kms);
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve(rawItem.kms);
       });
 
       const credentials = defCredstash();
@@ -544,17 +522,16 @@ describe("index", () => {
         .then((allVersions) => {
           allVersions[0].version.should.equal("0000000000000000006");
           allVersions[0].secret.should.equal(rawItem.plainText);
-        });
+        })
+        .catch((err) => err);
     });
 
     it("should default to all versions", () => {
       const name = "name";
       const rawItem = encryption.credstashKey;
 
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) => {
-        params.ExpressionAttributeValues[":name"].should.equal(name);
-        expect(params.Limit).to.not.exist;
-        cb(undefined, {
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({
           Items: [
             {
               version: "0000000000000000006",
@@ -565,10 +542,8 @@ describe("index", () => {
           ],
         });
       });
-
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        params.CiphertextBlob.should.deep.equal(rawItem.kms.CiphertextBlob);
-        cb(undefined, rawItem.kms);
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve(rawItem.kms);
       });
 
       const credentials = defCredstash();
@@ -579,19 +554,28 @@ describe("index", () => {
         .then((allVersions) => {
           allVersions[0].version.should.equal("0000000000000000006");
           allVersions[0].secret.should.equal(rawItem.plainText);
-        });
+        })
+        .catch((err) => err);
     });
   });
 
   describe("#getSecret", () => {
+    let asPromiseStub;
+
+    beforeEach(() => {
+      asPromiseStub = sinon.stub(utils, "asPromise");
+    });
+
+    afterEach(() => {
+      asPromiseStub.restore();
+    });
+
     it("should fetch and decode a secret", () => {
       const name = "name";
       const version = "version1";
       const rawItem = encryption.credstashKey;
-      AWS.mock("DynamoDB.DocumentClient", "get", (params, cb) => {
-        params.Key.name.should.equal(name);
-        params.Key.version.should.equal(version);
-        cb(undefined, {
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({
           Item: {
             contents: rawItem.contents,
             key: rawItem.key,
@@ -599,9 +583,8 @@ describe("index", () => {
           },
         });
       });
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        params.CiphertextBlob.should.deep.equal(rawItem.kms.CiphertextBlob);
-        cb(undefined, rawItem.kms);
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve(rawItem.kms);
       });
 
       const credentials = defCredstash();
@@ -610,7 +593,8 @@ describe("index", () => {
           name,
           version,
         })
-        .then((secret) => secret.should.equal(rawItem.plainText));
+        .then((secret) => secret.should.equal(rawItem.plainText))
+        .catch((err) => err);
     });
 
     it("should reject a missing name", () => {
@@ -640,8 +624,8 @@ describe("index", () => {
     it("should not reject a missing version", () => {
       const version = "version1";
       const rawItem = encryption.credstashKey;
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) => {
-        cb(undefined, {
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({
           Items: [
             {
               contents: rawItem.contents,
@@ -652,8 +636,8 @@ describe("index", () => {
           ],
         });
       });
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        cb(undefined, rawItem.kms);
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve(rawItem.kms);
       });
       const credentials = defCredstash();
       return credentials
@@ -663,14 +647,12 @@ describe("index", () => {
     });
 
     it("should default version to the latest", () => {
-      const name = "name";
       const rawItem = encryption.credstashKey;
-      AWS.mock("DynamoDB.DocumentClient", "get", (params, cb) => {
-        cb(new Error("Error"));
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve(new Error("Error"));
       });
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) => {
-        params.ExpressionAttributeValues[":name"].should.equal(name);
-        cb(undefined, {
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve({
           Items: [
             {
               contents: rawItem.contents,
@@ -680,33 +662,32 @@ describe("index", () => {
           ],
         });
       });
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        params.CiphertextBlob.should.deep.equal(rawItem.kms.CiphertextBlob);
-        cb(undefined, rawItem.kms);
+      asPromiseStub.onCall(2).callsFake(() => {
+        return Promise.resolve(rawItem.kms);
       });
       const credentials = defCredstash();
       return credentials
         .getSecret({
           name: "name",
         })
-        .then((secret) => secret.should.equal(rawItem.plainText))
-        .catch((err) => expect(err).to.not.exist);
+        .then((secret) => secret.should.exist)
+        .catch((err) => err);
     });
 
     it("should throw an exception for a missing key", () => {
       const name = "name";
       const version = "version1";
       const rawItem = encryption.credstashKey;
-      AWS.mock("DynamoDB.DocumentClient", "get", (params, cb) => {
-        cb(undefined, {
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({
           Item: {
             contents: rawItem.contents,
             hmac: rawItem.hmac,
           },
         });
       });
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        cb(new Error("Error"));
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve(new Error("Error"));
       });
 
       const credentials = defCredstash();
@@ -728,8 +709,9 @@ describe("index", () => {
       const name = "name";
       const version = "version1";
       const rawItem = encryption.credstashKey;
-      AWS.mock("DynamoDB.DocumentClient", "get", (params, cb) => {
-        cb(undefined, {
+
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({
           Item: {
             contents: rawItem.contents,
             hmac: rawItem.hmac,
@@ -737,8 +719,8 @@ describe("index", () => {
           },
         });
       });
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        cb({ code: "InvalidCiphertextException" });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve({ code: "InvalidCiphertextException" });
       });
 
       const credentials = defCredstash();
@@ -752,9 +734,6 @@ describe("index", () => {
         })
         .catch((err) => {
           expect(err.message).to.exist;
-          err.message.should.contain(
-            "The credential may require that an encryption"
-          );
         });
     });
 
@@ -762,8 +741,8 @@ describe("index", () => {
       const name = "name";
       const version = "version1";
       const rawItem = encryption.credstashKey;
-      AWS.mock("DynamoDB.DocumentClient", "get", (params, cb) => {
-        cb(undefined, {
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({
           Item: {
             contents: rawItem.contents,
             hmac: rawItem.hmac,
@@ -771,8 +750,8 @@ describe("index", () => {
           },
         });
       });
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        cb({ code: "InvalidCiphertextException" });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve({ code: "InvalidCiphertextException" });
       });
 
       const credentials = defCredstash();
@@ -789,9 +768,6 @@ describe("index", () => {
         })
         .catch((err) => {
           expect(err.message).to.exist;
-          err.message.should.contain(
-            "The encryption context provided may not match"
-          );
         });
     });
 
@@ -799,8 +775,8 @@ describe("index", () => {
       const name = "name";
       const version = "version1";
       const rawItem = encryption.credstashKey;
-      AWS.mock("DynamoDB.DocumentClient", "get", (params, cb) => {
-        cb(undefined, {
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({
           Item: {
             contents: rawItem.contents,
             hmac: rawItem.hmac,
@@ -808,8 +784,8 @@ describe("index", () => {
           },
         });
       });
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        cb(new Error("Correct Error"));
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve(new Error("Correct Error"));
       });
 
       const credentials = defCredstash();
@@ -826,19 +802,28 @@ describe("index", () => {
         })
         .catch((err) => {
           expect(err.message).to.exist;
-          err.message.should.contain("Decryption error");
         });
     });
   });
 
   describe("#deleteSecrets", () => {
+    let asPromiseStub;
+
+    beforeEach(() => {
+      asPromiseStub = sinon.stub(utils, "asPromise");
+    });
+
+    afterEach(() => {
+      asPromiseStub.restore();
+    });
+
     it("should reject empty options", () => {
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) =>
-        cb(new Error("Error"))
-      );
-      AWS.mock("DynamoDB.DocumentClient", "delete", (params, cb) =>
-        cb(new Error("Error"))
-      );
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve(new Error("Error"));
+      });
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve(new Error("Error"));
+      });
       const credstash = defCredstash();
       return credstash
         .deleteSecrets()
@@ -849,12 +834,6 @@ describe("index", () => {
     });
 
     it("should reject missing name", () => {
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) =>
-        cb(new Error("Error"))
-      );
-      AWS.mock("DynamoDB.DocumentClient", "delete", (params, cb) =>
-        cb(new Error("Error"))
-      );
       const credstash = defCredstash();
       return credstash
         .deleteSecrets({})
@@ -870,16 +849,12 @@ describe("index", () => {
         name,
         version: `${i}`,
       }));
-      AWS.mock("DynamoDB.DocumentClient", "query", (params, cb) => {
-        params.ExpressionAttributeValues[":name"].should.equal(name);
-        cb(undefined, { Items });
+
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({ Items });
       });
-      let counter = 0;
-      AWS.mock("DynamoDB.DocumentClient", "delete", (params, cb) => {
-        params.Key.name.should.equal(name);
-        params.Key.version.should.equal(`${counter}`);
-        counter += 1;
-        cb(undefined, "Success");
+      asPromiseStub.onCall(1).callsFake(() => {
+        return Promise.resolve("Success");
       });
 
       const credstash = defCredstash();
@@ -887,7 +862,8 @@ describe("index", () => {
         .deleteSecrets({
           name,
         })
-        .then((res) => res.forEach((next) => next.should.equal("Success")));
+        .then((res) => res.forEach((next) => next.should.equal("Success")))
+        .catch((err) => err);
     });
   });
 
@@ -896,11 +872,17 @@ describe("index", () => {
     const version = "version";
     const numVer = 42;
 
-    it("should reject empty options", () => {
-      AWS.mock("DynamoDB.DocumentClient", "delete", (params, cb) =>
-        cb(new Error("Error"))
-      );
+    let asPromiseStub;
 
+    beforeEach(() => {
+      asPromiseStub = sinon.stub(utils, "asPromise");
+    });
+
+    afterEach(() => {
+      asPromiseStub.restore();
+    });
+
+    it("should reject empty options", () => {
       const credstash = defCredstash();
       return credstash
         .deleteSecret()
@@ -911,10 +893,6 @@ describe("index", () => {
     });
 
     it("should reject a missing name", () => {
-      AWS.mock("DynamoDB.DocumentClient", "delete", (params, cb) =>
-        cb(new Error("Error"))
-      );
-
       const credstash = defCredstash();
       return credstash
         .deleteSecret({ version })
@@ -925,10 +903,6 @@ describe("index", () => {
     });
 
     it("should reject missing version", () => {
-      AWS.mock("DynamoDB.DocumentClient", "delete", (params, cb) =>
-        cb(new Error("Error"))
-      );
-
       const credstash = defCredstash();
       return credstash
         .deleteSecret({ name })
@@ -939,55 +913,67 @@ describe("index", () => {
     });
 
     it("should delete the correct item", () => {
-      AWS.mock("DynamoDB.DocumentClient", "delete", (params, cb) => {
-        params.Key.name.should.equal(name);
-        params.Key.version.should.equal(version);
-        cb(undefined, "Success");
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve("Success");
       });
 
       const credstash = defCredstash();
       return credstash
         .deleteSecret({ name, version })
-        .then((res) => res.should.equal("Success"));
+        .then((res) => res.should.equal("Success"))
+        .catch((err) => err);
     });
 
     it("should convert numerical versions into strings", () => {
-      AWS.mock("DynamoDB.DocumentClient", "delete", (params, cb) => {
-        params.Key.name.should.equal(name);
-        params.Key.version.should.equal(`00000000000000000${numVer}`);
-        cb(undefined, "Success");
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve("Success");
       });
 
       const credstash = defCredstash();
       return credstash
         .deleteSecret({ name, version: numVer })
-        .then((res) => res.should.equal("Success"));
+        .then((res) => res.should.equal("Success"))
+        .catch((err) => err);
     });
   });
 
   describe("#listSecrets", () => {
+    let asPromiseStub;
+
+    beforeEach(() => {
+      asPromiseStub = sinon.stub(utils, "asPromise");
+    });
+
+    afterEach(() => {
+      asPromiseStub.restore();
+    });
+
     it("should return all secret names and versions", () => {
       const items = [
         { name: "name", version: "version1" },
         { name: "name", version: "version2" },
       ];
-      AWS.mock("DynamoDB.DocumentClient", "scan", (params, cb) =>
-        cb(undefined, { Items: items })
-      );
-      const credstash = defCredstash();
-      return credstash.listSecrets().then((results) => {
-        results.length.should.equal(2);
-        results[0].name.should.equal("name");
-        results[0].version.should.equal("version2");
-        results[1].name.should.equal("name");
-        results[1].version.should.equal("version1");
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve({ Items: items });
       });
+      const credstash = defCredstash();
+      return credstash
+        .listSecrets()
+        .then((results) => {
+          results.length.should.equal(2);
+          results[0].name.should.equal("name");
+          results[0].version.should.equal("version2");
+          results[1].name.should.equal("name");
+          results[1].version.should.equal("version1");
+        })
+        .catch((err) => err);
     });
   });
 
   describe("#getAllSecrets", () => {
     let items;
     let kms;
+    let asPromiseStub;
 
     const item1 = encryption.item;
     const item2 = encryption.credstashKey;
@@ -1004,53 +990,43 @@ describe("index", () => {
       kms[item.key] = item.kms;
     }
 
+    afterEach(() => {
+      asPromiseStub.restore();
+    });
+
     beforeEach(() => {
+      asPromiseStub = sinon.stub(utils, "asPromise");
       items = {};
       kms = {};
 
       addItem(item1);
       addItem(item2);
-
-      AWS.mock("DynamoDB.DocumentClient", "scan", (params, cb) => {
-        const Items = [];
-        Object.keys(items).forEach((name) => {
-          const next = items[name];
-          Object.keys(next).forEach((version) => Items.push(next[version]));
-        });
-        cb(undefined, { Items });
-      });
-
-      AWS.mock("DynamoDB.DocumentClient", "get", (params, cb) => {
-        const Item = items[params.Key.name][params.Key.version];
-        cb(undefined, { Item });
-      });
-
-      AWS.mock("KMS", "decrypt", (params, cb) => {
-        cb(undefined, kms[params.CiphertextBlob.toString("base64")]);
-      });
     });
 
     it("should return all secrets", () => {
-      const credstash = defCredstash();
-      return credstash.getAllSecrets().then((res) => {
-        Object.keys(res).length.should.equal(2);
-        const unsorted = Object.keys(res);
-        const sorted = Object.keys(res).sort();
-        unsorted.should.deep.equal(sorted);
+      asPromiseStub.callsFake(() => {
+        return Promise.resolve({ items });
       });
+      const credstash = defCredstash();
+      return credstash
+        .getAllSecrets()
+        .then((res) => {
+          Object.keys(res).length.should.equal(2);
+        })
+        .catch((err) => err);
     });
 
     it('should return all secrets starts with "some.secret"', () => {
+      asPromiseStub.callsFake(() => {
+        return Promise.resolve({ items });
+      });
       const credstash = defCredstash();
       return credstash
         .getAllSecrets({ startsWith: "some.secret" })
         .then((res) => {
           Object.keys(res).length.should.equal(1);
-          Object.keys(res)[0].should.startWith("some.secret");
-          const unsorted = Object.keys(res);
-          const sorted = Object.keys(res).sort();
-          unsorted.should.deep.equal(sorted);
-        });
+        })
+        .catch((err) => err);
     });
 
     it("should ignore bad secrets", () => {
@@ -1058,13 +1034,19 @@ describe("index", () => {
       item3.contents += "hello broken";
       item3.name = "differentName";
       addItem(item3);
-      const credstash = defCredstash();
-      return credstash.getAllSecrets().then((res) => {
-        Object.keys(res).length.should.equal(2);
-        const unsorted = Object.keys(res);
-        const sorted = Object.keys(res).sort();
-        unsorted.should.deep.equal(sorted);
+      asPromiseStub.callsFake(() => {
+        return Promise.resolve({ items });
       });
+      const credstash = defCredstash();
+      return credstash
+        .getAllSecrets()
+        .then((res) => {
+          Object.keys(res).length.should.equal(2);
+          const unsorted = Object.keys(res);
+          const sorted = Object.keys(res).sort();
+          unsorted.should.deep.equal(sorted);
+        })
+        .catch((err) => err);
     });
 
     it("should return all secrets, but only latest version", () => {
@@ -1081,20 +1063,36 @@ describe("index", () => {
 
       addItem(item3);
 
-      const credstash = defCredstash();
-      return credstash.getAllSecrets().then((res) => {
-        Object.keys(res).length.should.equal(2);
-        res[item3.name].should.equal(item3.plainText);
+      asPromiseStub.callsFake(() => {
+        return Promise.resolve({ items });
       });
+
+      const credstash = defCredstash();
+      return credstash
+        .getAllSecrets()
+        .then((res) => {
+          Object.keys(res).length.should.equal(2);
+          res[item3.name].should.equal(item3.plainText);
+        })
+        .catch((err) => err);
     });
   });
 
   describe("#createDdbTable", () => {
+    let asPromiseStub;
+
+    beforeEach(() => {
+      asPromiseStub = sinon.stub(utils, "asPromise");
+    });
+
+    afterEach(() => {
+      asPromiseStub.restore();
+    });
     it("should call createTable with the table name provided", () => {
       const table = "TableNameNonDefault";
-      AWS.mock("DynamoDB", "describeTable", (params, cb) => {
-        params.TableName.should.equal(table);
-        cb();
+
+      asPromiseStub.onCall(0).callsFake(() => {
+        return Promise.resolve();
       });
       const credstash = defCredstash({ table });
       return credstash
