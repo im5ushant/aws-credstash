@@ -6,14 +6,17 @@
 // Definitions: https://github.com/DefinitelyTyped/DefinitelyTyped
 
 /// <reference types="node"/>
-import * as AWS from "aws-sdk";
+
+import * as AWS_DynamoDBDocumentClient from "@aws-sdk/lib-dynamodb";
+import * as AWS_DynamoDB from "@aws-sdk/client-dynamodb";
+import * as AWS_KMS from "@aws-sdk/client-kms";
 
 interface CredstashConfig {
   table?: string;
-  awsOpts?: AWS.KMS.ClientConfiguration;
-  dynamoOpts?: AWS.DynamoDB.ClientConfiguration;
+  awsOpts?: AWS_KMS.ClientConfiguration;
+  dynamoOpts?: AWS_DynamoDB.ClientConfiguration;
   kmsKey?: string;
-  kmsOpts?: AWS.KMS.ClientConfiguration;
+  kmsOpts?: AWS_KMS.ClientConfiguration;
 }
 
 interface CredstashContext {
@@ -31,15 +34,15 @@ interface PutSecretOptions {
 interface Credstash {
   getHighestVersion: (options: {
     name: string;
-  }) => Promise<AWS.DynamoDB.AttributeMap>;
+  }) => Promise<Record<string, AWS_DynamoDB.AttributeValue>>;
   incrementVersion: (options: { name: string }) => Promise<string>;
   putSecret: (
     options: PutSecretOptions
-  ) => Promise<AWS.DynamoDB.DocumentClient.PutItemOutput>;
+  ) => Promise<AWS_DynamoDBDocumentClient.PutCommandOutput>;
   decryptStash: (
     stash: { key: string },
     context?: CredstashContext
-  ) => Promise<AWS.KMS.DecryptResponse>;
+  ) => Promise<AWS_KMS.DecryptCommandOutput>;
   getAllVersions: (options: {
     name: string;
     context?: CredstashContext;
@@ -52,11 +55,11 @@ interface Credstash {
   }) => Promise<string>;
   deleteSecrets: (options: {
     name: string;
-  }) => Promise<AWS.DynamoDB.DocumentClient.DeleteItemOutput[]>;
+  }) => Promise<AWS_DynamoDBDocumentClient.DeleteCommandOutput[]>;
   deleteSecret: (options: {
     name: string;
     version: number;
-  }) => Promise<AWS.DynamoDB.DocumentClient.DeleteItemOutput>;
+  }) => Promise<AWS_DynamoDBDocumentClient.DeleteCommandOutput>;
   listSecrets: () => Promise<string[]>;
   getAllSecrets: (options: {
     version?: number;

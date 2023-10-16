@@ -1,5 +1,5 @@
 {
-  "name": "aws-credstash",
+  "name": "@peak-ai/aws-credstash",
   "version": "3.0.1",
   "description": "Node.js credstash using AWS DynamoDB and KMS. Fork of nodecredstash",
   "main": "index.js",
@@ -12,6 +12,7 @@
   ],
   "types": "index.d.ts",
   "devDependencies": {
+    "aws-sdk-client-mock": "^3.0.0",
     "aws-sdk-mock": "^5.1.0",
     "c8": "^8.0.0",
     "chai": "^4.3.4",
@@ -24,8 +25,13 @@
     "prettier": "^2.2.1"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.428.0",
+    "@aws-sdk/client-kms": "^3.428.0",
+    "@aws-sdk/lib-dynamodb": "^3.428.0",
     "aes-js": "^3.1.2",
-    "debug": "^4.3.1"
+    "aws-sdk-js-codemod": "^0.18.3",
+    "debug": "^4.3.1",
+    "sinon": "^16.1.0"
   },
   "peerDependencies": {
     "aws-sdk": "^2.171.0"
